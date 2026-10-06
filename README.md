@@ -119,5 +119,5 @@ village. Nothing fetched from the tiles is stored in this repository.
 ## Licence
 
 Code MIT (`LICENSE`). Data reached through bevdirect-serve: BEV VTC, CC BY 4.0 — `© BEV,
-<year> … bearbeitet` (`profile.notice()`, `Result.notice`, `X-Data-Attribution`) must be shown
+<year> … bearbeitet` (`profile.notice()`, the document's `notice`, `X-Data-Attribution`) must be shown
 with it. NE cells carry their own attribution in every container header.
