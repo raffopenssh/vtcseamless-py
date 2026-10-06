@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vtcseamless"
+version = "0.1.0"
+description = "Python client side of vtcseamless/bevdirect: drive bevdirect-serve, build NE cells (reference ne_cells), talk to the public overlay API, report as an observer"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+# PINNED: bit-identity of ne_cells across peers depends on the bundled GEOS in this exact shapely wheel.
+dependencies = ["shapely==2.1.2", "h3==4.5.0"]
+
+[project.urls]
+Homepage = "https://github.com/raffopenssh/vtcseamless-py"
+Engine = "https://github.com/raffopenssh/vtcseamless"
+
+[project.scripts]
+vtcseamless = "vtcseamless.cli:main"
+ne_cells = "ne_cells.__main__:main"
+
+[tool.setuptools]
+packages = ["vtcseamless", "ne_cells"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
