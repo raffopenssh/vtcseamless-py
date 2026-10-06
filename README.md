@@ -46,6 +46,13 @@ vtcseamless observe --kg <kg> --observer <my-label> --token $VTC_TOKEN     # →
    `since_last`) is stored as `{kg}.report.json`. 2 POST/s per token, burst 30; a 429 is
    waited out per `Retry-After`, never retried early.
 
+5. **Own declared layer (optional).** `{kg}.nec` is a complete NEC1 section; the container
+   format is self-delimiting, so a peer that also computes an observed layer (NEO1) can hand
+   the operator `nec_bytes + neo1_bytes` in one body — the operator then validates the
+   observed cell set against *this* build (its `bev` section) instead of the frozen index
+   epoch, which differs by 1–3 border cells on about half the KGs. That write path is
+   operator-private and not part of this package; only the `.nec` output is.
+
 Verified against the operator: one rural KG, 20 cells, 52 478 res-12 cells / 649 K rows /
 1163 chunks, built from a local bevdirect-serve `v0.3.0` by this loop → digest **identical to
 the operator's `bev` baseline** (`identical_kg_digest:true`, 1163/1163 chunks same). Timing on
