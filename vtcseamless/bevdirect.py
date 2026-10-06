@@ -360,17 +360,22 @@ def install(prefix: str, tag: Optional[str] = profile.BEVDIRECT_TAG, log: Callab
 
 class Server:
     """Run bevdirect-serve as a child process (flags = the service unit's defaults: tile TTL
-    24 h, cell TTL 6 h, 160 cells, 24 connections). Use as a context manager or call
-    :meth:`start` / :meth:`stop`."""
+    24 h, cell TTL 6 h, 160 cells, 24 connections, 1 GiB in-memory tile cache). Use as a
+    context manager or call :meth:`start` / :meth:`stop`.
+
+    bevdirect-serve keeps BEV tiles **in RAM only** (never on disk); ``cache_dir`` is
+    accepted for backwards compatibility and ignored. Start one Server for a whole batch
+    of KGs so the tiles of neighbouring KGs stay hot (``tile_cache_mb`` ≈ 1024 holds ~200 KGs)."""
 
     def __init__(self, prefix: str, port: int = 8787, cache_dir: Optional[str] = None, cells: int = 160,
-                 max_conns: int = 24, tile_ttl: str = "24h", cell_ttl: str = "6h", extra_args: Iterable[str] = (),
-                 log: Callable[[str], None] = print):
+                 max_conns: int = 24, tile_ttl: str = "24h", cell_ttl: str = "6h", tile_cache_mb: int = 1024,
+                 extra_args: Iterable[str] = (), log: Callable[[str], None] = print):
         self.prefix, self.port, self.log = prefix, port, log
         self.binary = os.path.join(prefix, "bevdirect-serve")
-        self.cache_dir = cache_dir or os.path.join(prefix, "bevcache")
-        self.args = [self.binary, "-addr", f"127.0.0.1:{port}", "-cache", self.cache_dir, "-ttl", cell_ttl,
-                     "-tile-ttl", tile_ttl, "-cells", str(cells), "-max-conns", str(max_conns), *extra_args]
+        self.cache_dir = cache_dir  # deprecated: tiles are never written to disk
+        self.tile_cache_mb = tile_cache_mb
+        self.args = [self.binary, "-addr", f"127.0.0.1:{port}", "-ttl", cell_ttl, "-tile-ttl", tile_ttl,
+                     "-cells", str(cells), "-max-conns", str(max_conns), *extra_args]
         self.proc: Optional[subprocess.Popen] = None
         self.url = f"http://127.0.0.1:{port}"
 
@@ -379,9 +384,11 @@ class Server:
             if not install_if_missing:
                 raise ServerError(f"{self.binary} missing")
             install(self.prefix, log=self.log)
-        os.makedirs(self.cache_dir, exist_ok=True)
+        args = list(self.args)
+        if self._supports_tile_cache_flag():
+            args[1:1] = ["-tile-cache-mb", str(self.tile_cache_mb)]
         logf = open(os.path.join(self.prefix, "bevdirect-serve.log"), "ab")
-        self.proc = subprocess.Popen(self.args, stdout=subprocess.DEVNULL, stderr=logf)
+        self.proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=logf)
         client = BevDirect(self.url)
         end = time.time() + ready_timeout_s
         while time.time() < end:
@@ -394,6 +401,14 @@ class Server:
                     raise ServerError(f"bevdirect-serve exited with {self.proc.returncode}; see {self.prefix}/bevdirect-serve.log")
                 time.sleep(0.3)
         raise ServerError("bevdirect-serve did not become ready")
+
+    def _supports_tile_cache_flag(self) -> bool:
+        """v0.3.x binaries reject unknown flags; only pass -tile-cache-mb when -h lists it."""
+        try:
+            h = subprocess.run([self.binary, "-h"], capture_output=True, text=True, timeout=10)
+            return "-tile-cache-mb" in (h.stdout + h.stderr)
+        except Exception:  # noqa: BLE001
+            return False
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
