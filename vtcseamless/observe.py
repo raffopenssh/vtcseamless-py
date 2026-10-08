@@ -140,13 +140,35 @@ def observe(kg: str, bev: BevDirect, api: Optional[PublicAPI], observer: str, ou
         if res.want_chunks:
             # step 2: the rows of the wanted chunks, from the section already in memory (no file, no inputs)
             rows = chunk_rows(sec.raw, sec.header["cells_n"], res.want_chunks)
-            ans = api.chunks(kg, observer, pack_chunk_rows(rows))
-            body = ans.data if isinstance(ans.data, dict) else {}
-            summary.update(chunks_posted=len(rows), chunks_stored=body.get("stored"), chunks_rejected=body.get("rejected"),
-                           deltas=len(body.get("deltas") or []))
-            log(f"kg {kg}: posted {len(rows)} chunk rows → stored={body.get('stored')} seen={body.get('seen')} "
-                f"rejected={body.get('rejected')} deltas={len(body.get('deltas') or [])}")
+            tot = dict(stored=0, seen=0, rejected=0, deltas=0)
+            for part in _split_bodies(rows, CHUNKS_BODY_MAX):
+                ans = api.chunks(kg, observer, pack_chunk_rows(part))
+                body = ans.data if isinstance(ans.data, dict) else {}
+                for k in ("stored", "seen", "rejected"):
+                    tot[k] += int(body.get(k) or 0)
+                tot["deltas"] += len(body.get("deltas") or [])
+            summary.update(chunks_posted=len(rows), chunks_stored=tot["stored"], chunks_rejected=tot["rejected"], deltas=tot["deltas"])
+            log(f"kg {kg}: posted {len(rows)} chunk rows → stored={tot['stored']} seen={tot['seen']} "
+                f"rejected={tot['rejected']} deltas={tot['deltas']}")
     return summary
+
+
+CHUNKS_BODY_MAX = 1_500_000   # server limit is 2 MB per POST …/chunks
+
+
+def _split_bodies(rows: dict, limit: int) -> list[dict]:
+    """Chunk-row dicts whose packed size stays under `limit` (order = chunk id)."""
+    out, cur, size = [], {}, 6
+    for c in sorted(rows):
+        n = 12 + len(rows[c])
+        if cur and size + n > limit:
+            out.append(cur)
+            cur, size = {}, 6
+        cur[c] = rows[c]
+        size += n
+    if cur:
+        out.append(cur)
+    return out
 
 
 def observe_many(kgs: Iterable[str], **kw) -> list[dict]:

@@ -15,7 +15,13 @@ import threading  # noqa: E402
 
 from ne_cells.pack import unpack_sections  # noqa: E402
 from vtcseamless.bevdirect import BevDirect  # noqa: E402
-from vtcseamless.observe import observe, resolve_domain  # noqa: E402
+from vtcseamless.observe import observe, resolve_domain, _split_bodies  # noqa: E402
+
+
+def test_split_bodies():
+    rows = {format(i, "x"): bytes(30 * 10) for i in range(100)}
+    parts = _split_bodies(rows, 1000)
+    assert sum(len(p) for p in parts) == 100 and all(6 + sum(12 + len(b) for b in p.values()) <= 1000 for p in parts) and len(parts) > 1
 from vtcseamless.public import PublicAPI  # noqa: E402
 
 
