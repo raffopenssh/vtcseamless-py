@@ -22,10 +22,18 @@ a test fails if they appear anywhere else.
 
 ```
 pip install git+https://github.com/raffopenssh/vtcseamless-py      # python ≥ 3.11
-vtcseamless serve &                       # downloads bevdirect-serve v0.3.0 once, runs it on :8787
+vtcseamless serve &                       # downloads bevdirect-serve v0.3.3 once, runs it on :8787
 vtcseamless health
 vtcseamless observe --kg <kg> --observer <my-label> --token $VTC_TOKEN     # → ./ne_out/<kg>.nec + report answer
 ```
+
+**Aligned cells only.** Every build this package makes is from aligned 0.02° cell documents
+(`ix=floor(lon/0.02)`), never from a free viewport: bevdirect-serve's multi-cell `/viewport`
+keeps one truncated copy of a parcel wider than cell + pad, so its digests differ from the
+operator's by hundreds of chunks (75110/73008, Oct 2026) and `/report` answers
+`change_suspect: coverage_lossy` for such builds (cells_n below the best build seen for the
+bbox). Peers with their own pipeline: fetch cells, not viewports. bevdirect-serve < v0.3.3
+emits `null` for an empty layer; this client normalises it to `[]` (≥ 0.1.1).
 
 ## The peer loop (`vtcseamless observe`)
 

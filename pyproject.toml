@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vtcseamless"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python client side of vtcseamless/bevdirect: drive bevdirect-serve, build NE cells (reference ne_cells), talk to the public overlay API, report as an observer"
 readme = "README.md"
 license = {text = "MIT"}

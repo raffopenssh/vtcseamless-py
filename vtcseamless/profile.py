@@ -13,7 +13,7 @@ GO_RELEASES_API = "https://api.github.com/repos/raffopenssh/vtcseamless/releases
 GO_BOOTSTRAP = "https://raw.githubusercontent.com/raffopenssh/vtcseamless/main/bootstrap.sh"
 #: pinned tag of bevdirect-serve this package was validated against; the NE source string is
 #: "bevdirect@<tag>" and documents from another tag are a different source (never compared).
-BEVDIRECT_TAG = "v0.3.0"
+BEVDIRECT_TAG = "v0.3.3"
 BEVDIRECT_URL = os.environ.get("BEVDIRECT_URL", "http://127.0.0.1:8787")
 
 # ── the public overlay API (tokenless reads; /contrib needs a contributor token) ─────────

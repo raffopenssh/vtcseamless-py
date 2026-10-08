@@ -16,7 +16,7 @@ this package drives it and does everything a Python peer needs around it:
 
 Hosts, source pins and the attribution text live only in :mod:`vtcseamless.profile`.
 """
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from . import profile  # noqa: F401
 from .bevdirect import BevDirect, Server, install, cells_for, cell_bbox, cell_of  # noqa: F401

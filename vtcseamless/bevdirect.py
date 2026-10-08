@@ -173,6 +173,11 @@ class BevDirect:
             if body.get("ready"):
                 self.stats.seconds += time.time() - t0
                 self._version = body.get("bevdirect_version") or self._version
+                # bevdirect-serve < v0.3.3 emits null for an empty layer; the frozen
+                # ne_cells/canon.py iterates every layer → normalise to [] here.
+                for k in ALL_LAYERS:
+                    if body.get(k) is None:
+                        body[k] = []
                 return body
             self.stats.pending_rounds += 1
             if time.time() >= end:

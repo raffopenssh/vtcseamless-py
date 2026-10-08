@@ -16,6 +16,7 @@ from vtcseamless.bevdirect import BevDirect, PendingError, cell_bbox  # noqa: E4
 class FakeServe(BaseHTTPRequestHandler):
     """Minimal bevdirect-serve: /health, /viewport (first call per cell pending), /kg/{kg}."""
     pending_once = True
+    null_footprints = False
     hits = {}
 
     def log_message(self, *a):
@@ -44,7 +45,10 @@ class FakeServe(BaseHTTPRequestHandler):
             FakeServe.hits[key] = FakeServe.hits.get(key, 0) + 1
             if FakeServe.pending_once and FakeServe.hits[key] == 1 and float(q.get("wait", "20")) < 5:
                 return self._json(200, {"parcels": [], "ready": False, "pending": True, "retry_after_s": 0})
-            return self._json(200, synth.cell_document(ix, iy))
+            doc = synth.cell_document(ix, iy)
+            if FakeServe.null_footprints:
+                doc = dict(doc, footprints=None)  # bevdirect-serve < v0.3.3 on a cell without buildings
+            return self._json(200, doc)
         if u.path.startswith("/kg/"):
             return self._json(200, {"kg": {"kg_code": u.path[4:], "min_lon": synth.ORIGIN_LON, "min_lat": synth.ORIGIN_LAT,
                                            "max_lon": synth.ORIGIN_LON + synth.N * synth.STEP, "max_lat": synth.ORIGIN_LAT + synth.N * synth.STEP}})
@@ -102,3 +106,17 @@ def test_bbox_validation(server):
 
 def test_cell_bbox_is_server_grid():
     assert cell_bbox(755, 2356) == (15.1, 47.12, 15.12, 47.14)
+
+
+def test_null_layer_is_normalised(server, tmp_path):
+    """bevdirect-serve < v0.3.3 emits null for an empty layer; the frozen ne_cells.canon
+    iterates every layer, so the client must hand it [] (alpine cells have no footprints)."""
+    FakeServe.pending_once, FakeServe.null_footprints = False, True
+    try:
+        bev = BevDirect(server, cache_dir=str(tmp_path / "c"))
+        doc = bev.cell(9000, 2000)
+        assert doc["footprints"] == []
+        from ne_cells import canon
+        canon.from_bevdirect([doc])  # must not raise
+    finally:
+        FakeServe.null_footprints = False
