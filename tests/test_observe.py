@@ -54,6 +54,17 @@ def test_observe_end_to_end(servers, tmp_path):
     rep = json.load(open(os.path.join(out, "99902.report.json")))
     assert rep["answer"]["baseline"] == "this_report" and "chunks" in rep["report"] and rep["report"]["cells_n"] == s1["cells"]
     assert not os.path.exists(os.path.join(out, "99902.inputs"))
+    # change protocol: chunks_ap travelled with the report, the wanted rows went out as NECH with the
+    # register bytes zeroed, and NO new file appeared (only .nec/.build.json/.report.json on disk)
+    assert set(rep["report"]["chunks_ap"]) == set(rep["report"]["chunks"]) and s1["want_chunks"] == s1["chunks"]
+    assert s1["chunks_posted"] == s1["chunks"] and len(fake_public.FakePublic.chunk_bodies) == 1
+    body = fake_public.FakePublic.chunk_bodies[0]
+    assert body[:4] == b"NECH" and True  # layout checked below
+    off, nch = 6, int.from_bytes(body[4:6], "little")
+    for _ in range(nch):
+        ln = int.from_bytes(body[off + 8:off + 12], "little"); rows = body[off + 12:off + 12 + ln]; off += 12 + ln
+        assert ln % 30 == 0 and all(rows[i + 24] == 0 and rows[i + 25] == 0 for i in range(0, ln, 30))
+    assert sorted(os.listdir(out)) == ["99902.build.json", "99902.nec", "99902.report.json"]
     # second pass: served from the document cache, same digest, compared against the first report
     bev2 = BevDirect(burl, cache_dir=str(tmp_path / "cache"))
     s2 = observe(synth.KG_EAST, bev2, api, "test-peer", out, epoch="2026-10", log=lambda s: None)

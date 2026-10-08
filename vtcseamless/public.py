@@ -82,6 +82,11 @@ class ReportResult:
     def since_last(self) -> dict:
         return dict(self.body.get("since_last") or {})
 
+    @property
+    def want_chunks(self) -> list:
+        """Chunks whose statistics rows the server asks for (change protocol step 2)."""
+        return list(self.body.get("want_chunks") or [])
+
     def summary(self) -> str:
         b = self.body
         sl = self.since_last
@@ -242,6 +247,14 @@ class PublicAPI:
         if ans.status == 404:
             raise APIError(404, "contribute prefix answered 404: token missing or not a contributor token", f"/ne/{kg}/report")
         return ReportResult(kg, ans.status, ans.data if isinstance(ans.data, dict) else {})
+
+    def chunks(self, kg: str, observer: str, body: bytes) -> Answer:
+        """``POST {CONTRIB_PREFIX}/api/v1/ne/{kg}/chunks?observer=`` — the NECH body
+        (``ne_cells.change.pack_chunk_rows``) of exactly the ``want_chunks`` the report answer asked
+        for: per-cell statistics rows with the register bytes zeroed. Never K rows, never inputs."""
+        kg = str(kg).zfill(5)
+        return self.request("POST", f"{profile.CONTRIB_PREFIX}/api/v1/ne/{kg}/chunks", params={"observer": observer}, body=body,
+                            headers={"Content-Type": "application/octet-stream"}, auth=True, use_etag=False)
 
     def reports(self, kg: str) -> Answer:
         """``GET …/ne/{kg}/report`` — reports received for a KG (token)."""

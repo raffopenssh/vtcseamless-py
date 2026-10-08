@@ -8,7 +8,8 @@ TOKEN = "test-contributor-token"
 
 
 class FakePublic(BaseHTTPRequestHandler):
-    reports = []          # bodies received
+    reports = []
+    chunk_bodies = []          # bodies received
     rate_limit_once = True
     manifest_hits = 0
 
@@ -50,7 +51,13 @@ class FakePublic(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         n = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(n) or b"{}")
+        raw = self.rfile.read(n)
+        if u.path.startswith("/contrib/api/v1/ne/") and u.path.endswith("/chunks"):
+            if self.headers.get("Authorization") != "Bearer " + TOKEN or raw[:4] != b"NECH":
+                return self._json(400, {"error": "bad chunks body"})
+            FakePublic.chunk_bodies.append(raw)
+            return self._json(200, {"stored": int.from_bytes(raw[4:6], "little"), "seen": 0, "rejected": 0, "deltas": []})
+        body = json.loads(raw or b"{}")
         if u.path.startswith("/contrib/api/v1/ne/") and u.path.endswith("/report"):
             if self.headers.get("Authorization") != "Bearer " + TOKEN:
                 return self._json(404, {"error": "not found"})
@@ -62,7 +69,8 @@ class FakePublic(BaseHTTPRequestHandler):
                     return self._json(400, {"error": f"missing {k}"})
             FakePublic.reports.append(body)
             chunks = body["chunks"]
-            return self._json(200, {"kg": body["kg"], "baseline": "this_report" if len(FakePublic.reports) == 1 else "report",
+            want = sorted(body.get("chunks_ap") or {}) if len(FakePublic.reports) == 1 else []
+            return self._json(200, {"kg": body["kg"], "want_chunks": want, "baseline": "this_report" if len(FakePublic.reports) == 1 else "report",
                                     "compared": len(FakePublic.reports) > 1, "chunks_same": list(chunks) if len(FakePublic.reports) > 1 else [],
                                     "chunks_changed": [], "chunks_unknown_to_us": [], "chunks_baselined_now": len(chunks) if len(FakePublic.reports) == 1 else 0,
                                     "since_last": {"compared": len(chunks), "same": len(chunks), "changed": []}, "token": "test"})

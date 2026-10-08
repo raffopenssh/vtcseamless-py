@@ -12,6 +12,10 @@ Rules it implements (contract doc § Input domain, § Epochs, § Observers):
    ``epoch`` defaults to the current ISO month.
 4. The report carries digests only and is posted to the contribute prefix; the answer
    (``baseline``, ``compared``, ``chunks_changed``, ``since_last``) is stored beside the build.
+5. Change protocol (``ne_cells.change``): the report also carries ``chunks_ap`` (digest of each
+   chunk's rows with the register bytes zeroed); when the answer lists ``want_chunks`` the rows of
+   exactly those chunks are posted to ``…/chunks`` from the build already in memory. Nothing new
+   touches disk; register bytes and K rows never leave the peer.
 """
 from __future__ import annotations
 
@@ -21,7 +25,9 @@ import time
 from typing import Callable, Iterable, Optional
 
 from ne_cells import canon
-from ne_cells.__main__ import build_from_bevdirect, report_of
+from ne_cells.__main__ import build_from_bevdirect
+from ne_cells.change import chunk_rows, epoch_report_ap, pack_chunk_rows
+from ne_cells.pack import MAGIC_LU, unpack_sections
 from ne_cells.algo import INPUT_PAD_DEG, default_input_bbox
 
 from . import profile
@@ -114,7 +120,9 @@ def observe(kg: str, bev: BevDirect, api: Optional[PublicAPI], observer: str, ou
     summary = dict(kg=kg, digest=built["digest"], source=built["source"], epoch=epoch, cells=built["cells"],
                    kcells=built["kcells"], input_bbox=list(ibox), cells_fetched=len(cells), nec=nec,
                    seconds=round(time.time() - t0, 1), posted=False)
-    rep = report_of(nec, observer)
+    with open(nec, "rb") as f:
+        sec = [s for s in unpack_sections(f.read()) if s.magic == MAGIC_LU][0]
+    rep = epoch_report_ap(sec, observer)
     with open(os.path.join(out_dir, f"{kg}.report.json"), "w") as f:
         json.dump(rep, f, separators=(",", ":"))
     summary["chunks"] = len(rep.get("chunks") or {})
@@ -127,8 +135,17 @@ def observe(kg: str, bev: BevDirect, api: Optional[PublicAPI], observer: str, ou
                       separators=(",", ":"))
         summary.update(posted=True, answer=res.body, baseline=res.baseline, compared=res.compared, unchanged=res.unchanged,
                        chunks_same=res.chunks_same, chunks_changed=len(res.chunks_changed),
-                       since_last_changed=len(res.since_last.get("changed") or []))
+                       since_last_changed=len(res.since_last.get("changed") or []), want_chunks=len(res.want_chunks))
         log(res.summary())
+        if res.want_chunks:
+            # step 2: the rows of the wanted chunks, from the section already in memory (no file, no inputs)
+            rows = chunk_rows(sec.raw, sec.header["cells_n"], res.want_chunks)
+            ans = api.chunks(kg, observer, pack_chunk_rows(rows))
+            body = ans.data if isinstance(ans.data, dict) else {}
+            summary.update(chunks_posted=len(rows), chunks_stored=body.get("stored"), chunks_rejected=body.get("rejected"),
+                           deltas=len(body.get("deltas") or []))
+            log(f"kg {kg}: posted {len(rows)} chunk rows → stored={body.get('stored')} seen={body.get('seen')} "
+                f"rejected={body.get('rejected')} deltas={len(body.get('deltas') or [])}")
     return summary
 
 
