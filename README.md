@@ -53,6 +53,13 @@ emits `null` for an empty layer; this client normalises it to `[]` (≥ 0.1.1).
    (`baseline`, `compared`, `chunks_same / chunks_changed / chunks_unknown_to_us`,
    `since_last`) is stored as `{kg}.report.json`. 2 POST/s per token, burst 30; a 429 is
    waited out per `Retry-After`, never retried early.
+   **Change (≥ 0.2.0, `ne_cells/change.py`, not frozen):** the report also carries `chunks_ap` — per
+   chunk the sha256 of its rows with the two register-derived bytes (`gk`, `n_parc`) zeroed. When
+   the answer lists `want_chunks` (a chunk whose statistics are new to the server), the rows of
+   exactly those chunks are posted as one binary `NECH` body to `…/ne/{kg}/chunks?observer=` from
+   the section already in memory; the server verifies each chunk against `digest_ap`, keeps the
+   version and answers with the m² deltas it computed. Register bytes, K rows and the fetched
+   documents never leave the peer; no extra file is written (`tests/test_observe.py`).
 
 5. **Own declared layer (optional).** `{kg}.nec` is a complete NEC1 section; the container
    format is self-delimiting, so a peer that also computes an observed layer (NEO1) can hand
