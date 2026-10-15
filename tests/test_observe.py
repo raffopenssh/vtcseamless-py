@@ -83,3 +83,97 @@ def test_observe_refuses_unknown_kg(servers, tmp_path):
     bev = BevDirect(burl)
     with pytest.raises(ValueError):
         observe("99999", bev, PublicAPI(purl, token=fake_public.TOKEN, retry_s=5), "t", str(tmp_path), post=False, log=lambda s: None)
+
+
+def _fresh(tmp_path, burl, purl):
+    fake_public.FakePublic.reports.clear()
+    fake_public.FakePublic.chunk_bodies.clear()
+    fake_public.FakePublic.rate_limit_once = False
+    fake_public.FakePublic.qc_same_input = 0
+    fake_public.FakePublic.delta_status = "candidate"
+    FakeServe.drop_tiles = {}
+    FakeServe.no_tiles = False
+    return BevDirect(burl, cache_dir=str(tmp_path / "cache")), PublicAPI(purl, token=fake_public.TOKEN, retry_s=10), str(tmp_path / "out")
+
+
+def test_report_carries_tile_provenance_stable(servers, tmp_path):
+    """tiles{} and chunks_tiles{} are in the posted report, stable across two runs (one fresh, one
+    from the document cache), and computed only from the documents' tiles[] (no ne_cells change)."""
+    burl, purl = servers
+    bev, api, out = _fresh(tmp_path, burl, purl)
+    logs = []
+    s1 = observe(synth.KG_EAST, bev, api, "test-peer", out, epoch="2026-10", log=logs.append)
+    rep1 = fake_public.FakePublic.reports[0]
+    t = rep1["tiles"]
+    assert set(t) == {"expected", "fetched", "hash"} and t["expected"] == t["fetched"] > 0 and len(t["hash"]) == 16
+    ct = rep1["chunks_tiles"]
+    assert set(ct) == set(rep1["chunks"]) and all(len(v) == 16 and int(v, 16) >= 0 for v in ct.values())
+    # the first-pass answer carried want_tiles (ignored) — the loop still posted every wanted chunk
+    assert rep1["chunks_ap"] and s1["chunks_posted"] == s1["chunks"] and "want_tiles" in s1["answer"]
+    assert s1["deltas_by_status"] == {"candidate": s1["deltas"]} and not any("WARNING" in m for m in logs)
+    # second run: documents from the cache → identical provenance
+    bev2 = BevDirect(burl, cache_dir=str(tmp_path / "cache"))
+    s2 = observe(synth.KG_EAST, bev2, api, "test-peer", out, epoch="2026-10", log=lambda m: None)
+    rep2 = fake_public.FakePublic.reports[1]
+    assert bev2.stats.cache_hits == 2 and rep2["tiles"] == t and rep2["chunks_tiles"] == ct and s2["digest"] == s1["digest"]
+    # the hashes are over tile sha256s only: a different tile set gives a different hash (no object data involved)
+    from vtcseamless.observe import tile_provenance
+    docs = {c: synth.cell_document(*c) for c in synth.village_cells()}
+    docs2 = {c: dict(d, tiles=synth.cell_tiles(*c, seed=2)[0]) for c, d in docs.items()}  # same objects, other tile bytes
+    ta, ca = tile_provenance(docs, rep1["chunks"]); tb, cb = tile_provenance(docs2, rep1["chunks"])
+    assert ta == t and ca == ct and tb["hash"] != t["hash"] and all(cb[c] != ca[c] for c in ca)
+    # only the tiles that cover a chunk feed its hash: changing one tile moves a subset of chunks
+    west = synth.village_cells()[0]
+    partial = False
+    for i, tile in enumerate(docs[west]["tiles"]):
+        docs3 = {c: json.loads(json.dumps(d)) for c, d in docs.items()}
+        docs3[west]["tiles"][i]["sha256"] = "0" * 64
+        _, cc = tile_provenance(docs3, rep1["chunks"])
+        moved = [c for c in ca if cc[c] != ca[c]]
+        assert len(moved) < len(ca), tile
+        partial = partial or 0 < len(moved)
+    assert partial
+
+
+def test_incomplete_fetch_is_reported_and_refetched(servers, tmp_path):
+    burl, purl = servers
+    bev, api, out = _fresh(tmp_path, burl, purl)
+    west = synth.village_cells()[0]
+    FakeServe.drop_tiles = {west: 2}
+    logs = []
+    s1 = observe(synth.KG_EAST, bev, api, "test-peer", out, epoch="2026-10", log=logs.append)
+    rep = fake_public.FakePublic.reports[0]
+    assert rep["tiles"]["fetched"] == rep["tiles"]["expected"] - 2 and s1["tiles_incomplete_cells"] == [list(west)]
+    assert s1["answer"]["change_suspect"] == "tiles_incomplete" and s1["want_chunks"] == 0 and "chunks_posted" not in s1
+    assert any("WARNING" in m and "incomplete tile fetch" in m for m in logs)
+    # the incomplete cell was NOT cached: the next pass re-fetches it (the complete one is served from cache)
+    FakeServe.drop_tiles = {}
+    bev2 = BevDirect(burl, cache_dir=str(tmp_path / "cache"))
+    s2 = observe(synth.KG_EAST, bev2, api, "test-peer", out, epoch="2026-10", log=lambda m: None)
+    assert bev2.stats.cache_hits == 1 and bev2.stats.requests >= 2 and "tiles_incomplete_cells" not in s2
+    assert fake_public.FakePublic.reports[1]["tiles"]["fetched"] == fake_public.FakePublic.reports[1]["tiles"]["expected"]
+
+
+def test_qc_answer_keys_are_logged(servers, tmp_path):
+    burl, purl = servers
+    bev, api, out = _fresh(tmp_path, burl, purl)
+    fake_public.FakePublic.qc_same_input = 3
+    fake_public.FakePublic.delta_status = "pipeline"
+    logs = []
+    s1 = observe(synth.KG_EAST, bev, api, "test-peer", out, epoch="2026-10", log=logs.append)
+    assert s1["qc_same_input"] == 3 and s1["deltas_by_status"] == {"pipeline": s1["deltas"]} and s1["deltas"] > 0
+    assert any(m.startswith("WARNING kg 99902: qc_same_input=3") for m in logs)
+    assert any("status pipeline" in m for m in logs)
+
+
+def test_old_server_without_tiles_sends_no_provenance(servers, tmp_path):
+    burl, purl = servers
+    bev, api, out = _fresh(tmp_path, burl, purl)
+    FakeServe.no_tiles = True
+    try:
+        logs = []
+        observe(synth.KG_EAST, bev, api, "test-peer", out, epoch="2026-10", log=logs.append)
+        rep = fake_public.FakePublic.reports[0]
+        assert "tiles" not in rep and "chunks_tiles" not in rep and any("no tiles[]" in m for m in logs)
+    finally:
+        FakeServe.no_tiles = False

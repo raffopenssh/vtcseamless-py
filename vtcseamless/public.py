@@ -87,6 +87,22 @@ class ReportResult:
         """Chunks whose statistics rows the server asks for (change protocol step 2)."""
         return list(self.body.get("want_chunks") or [])
 
+    @property
+    def qc_same_input(self) -> int:
+        """Chunks whose digest changed while their tile hash did not (server QC, ≥ 0.3.0).
+        Non-zero means the peer's build is nondeterministic or mixed cached/fresh cells."""
+        return int(self.body.get("qc_same_input") or 0)
+
+    @property
+    def change_suspect(self) -> str:
+        """``coverage_lossy`` / ``tiles_incomplete`` / … — the server counts nothing from this report."""
+        return str(self.body.get("change_suspect") or "")
+
+    @property
+    def want_tiles(self) -> dict:
+        """Per-chunk tile hashes the server recorded with its wants — informational, ignored by the loop."""
+        return dict(self.body.get("want_tiles") or {})
+
     def summary(self) -> str:
         b = self.body
         sl = self.since_last

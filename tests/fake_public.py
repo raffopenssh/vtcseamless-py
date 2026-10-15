@@ -12,6 +12,8 @@ class FakePublic(BaseHTTPRequestHandler):
     chunk_bodies = []          # bodies received
     rate_limit_once = True
     manifest_hits = 0
+    qc_same_input = 0          # echoed in the next report answer (server QC key)
+    delta_status = "candidate" # status of the deltas answered on …/chunks
 
     def log_message(self, *a):
         pass
@@ -56,7 +58,9 @@ class FakePublic(BaseHTTPRequestHandler):
             if self.headers.get("Authorization") != "Bearer " + TOKEN or raw[:4] != b"NECH":
                 return self._json(400, {"error": "bad chunks body"})
             FakePublic.chunk_bodies.append(raw)
-            return self._json(200, {"stored": int.from_bytes(raw[4:6], "little"), "seen": 0, "rejected": 0, "deltas": []})
+            n = int.from_bytes(raw[4:6], "little")
+            deltas = [{"cell": "x", "chunk": "y", "d_lu_m2": [0] * 9, "status": FakePublic.delta_status} for _ in range(n)]
+            return self._json(200, {"stored": n, "seen": 0, "rejected": 0, "deltas": deltas})
         body = json.loads(raw or b"{}")
         if u.path.startswith("/contrib/api/v1/ne/") and u.path.endswith("/report"):
             if self.headers.get("Authorization") != "Bearer " + TOKEN:
@@ -70,7 +74,15 @@ class FakePublic(BaseHTTPRequestHandler):
             FakePublic.reports.append(body)
             chunks = body["chunks"]
             want = sorted(body.get("chunks_ap") or {}) if len(FakePublic.reports) == 1 else []
-            return self._json(200, {"kg": body["kg"], "want_chunks": want, "baseline": "this_report" if len(FakePublic.reports) == 1 else "report",
+            t = body.get("tiles") or {}
+            extra = {}
+            if t and t.get("fetched", 0) < t.get("expected", 0):
+                extra["change_suspect"], want = "tiles_incomplete", []
+            if body.get("chunks_tiles") and want:
+                extra["want_tiles"] = {c: body["chunks_tiles"][c] for c in want if c in body["chunks_tiles"]}
+            if FakePublic.qc_same_input:
+                extra["qc_same_input"] = FakePublic.qc_same_input
+            return self._json(200, {**extra, "kg": body["kg"], "want_chunks": want, "baseline": "this_report" if len(FakePublic.reports) == 1 else "report",
                                     "compared": len(FakePublic.reports) > 1, "chunks_same": list(chunks) if len(FakePublic.reports) > 1 else [],
                                     "chunks_changed": [], "chunks_unknown_to_us": [], "chunks_baselined_now": len(chunks) if len(FakePublic.reports) == 1 else 0,
                                     "since_last": {"compared": len(chunks), "same": len(chunks), "changed": []}, "token": "test"})

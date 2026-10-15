@@ -22,7 +22,7 @@ a test fails if they appear anywhere else.
 
 ```
 pip install git+https://github.com/raffopenssh/vtcseamless-py      # python ≥ 3.11
-vtcseamless serve &                       # downloads bevdirect-serve v0.3.3 once, runs it on :8787
+vtcseamless serve &                       # downloads bevdirect-serve v0.3.4 once, runs it on :8787
 vtcseamless health
 vtcseamless observe --kg <kg> --observer <my-label> --token $VTC_TOKEN     # → ./ne_out/<kg>.nec + report answer
 ```
@@ -60,6 +60,27 @@ emits `null` for an empty layer; this client normalises it to `[]` (≥ 0.1.1).
    the section already in memory; the server verifies each chunk against `digest_ap`, keeps the
    version and answers with the m² deltas it computed. Register bytes, K rows and the fetched
    documents never leave the peer; no extra file is written (`tests/test_observe.py`).
+
+   **QC provenance (≥ 0.3.0, needs bevdirect-serve ≥ v0.3.4; `vtcseamless/observe.py`, not
+   `ne_cells/`):** every report, step 0 and step 1 alike, also carries two fields computed from the
+   `tiles[{z,x,y,sha256}]` arrays of the cell documents the build was made from — only hashes and
+   counts, nothing about objects:
+
+   | field | content |
+   |---|---|
+   | `tiles` | `{"expected": N, "fetched": M, "hash": sha256[:16]}` — `expected`/`fetched` summed over the documents' `stats.tiles_expected / tiles_fetched`; `hash` over all tile sha256s of the build, sorted |
+   | `chunks_tiles` | `{chunk_hex: sha256[:16]}` per res-10 chunk, over the concatenated sha256 strings of the tiles whose web-mercator bbox intersects the chunk's hexagon bbox (`h3.cell_to_boundary`), sorted by (z, x, y) |
+
+   With them the server tells "the land changed" from "the build changed": a chunk whose digest
+   flips while its tile hash stays equal is a **pipeline** defect, never counted. `fetched <
+   expected` is still posted (the server answers `change_suspect: "tiles_incomplete"` and asks for
+   nothing); the loop logs a WARNING, never caches such a cell and re-fetches it on the next pass.
+   Documents without `tiles[]` (older server) send no provenance. Three answer keys are new:
+   `want_tiles` (the per-chunk hashes the server recorded with its wants — ignored),
+   `qc_same_input` (logged as `WARNING kg <kg>: qc_same_input=n` — our build is nondeterministic or
+   a cached cell was mixed with a fresh one) and, on the `…/chunks` answer, delta `status`
+   `pipeline` / `jitter` beside `candidate` / `confirmed` (counted in the summary's
+   `deltas_by_status`; `pipeline` is a WARNING).
 
 5. **Own declared layer (optional).** `{kg}.nec` is a complete NEC1 section; the container
    format is self-delimiting, so a peer that also computes an observed layer (NEO1) can hand
@@ -128,7 +149,8 @@ ne_cells dump out.nec | ne_cells compare a.nec b.nec
 ```
 
 `algo.py`, `canon.py`, `ns_groups.py`, `pack.py` are byte-identical to the operator's copy
-(the digest contract depends on it); `__main__.py` is the CLI. Determinism: canonical input
+(the digest contract depends on it; `scripts/ne_cells_sync_check.sh` mirrors the operator's check
+and also fails if tile hashing ever appears in `ne_cells/`); `__main__.py` is the CLI. Determinism: canonical input
 (7-decimal grid, `make_valid`), complete-copy-wins dedupe, WKB-sorted unions, round-half-up
 quantisation, pinned GEOS. `tests/test_ne_cells.py` proves bit-identity under shuffled and
 duplicated input and under the bevdirect two-cell split, on synthetic data.

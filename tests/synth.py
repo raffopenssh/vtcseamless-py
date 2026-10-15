@@ -69,7 +69,28 @@ def _clip(g, w, s, e, n):
     return {"type": "Polygon", "coordinates": [[[cx0, cy0], [cx1, cy0], [cx1, cy1], [cx0, cy1], [cx0, cy0]]]}, whole
 
 
-def cell_document(ix, iy, seed=1, pad=0.004, version=VERSION, big=True):
+def cell_tiles(ix, iy, seed=1, pad=0.004, drop=0):
+    """What bevdirect-serve ≥ v0.3.4 lists as ``tiles`` for the padded cell: z15 + z16 tiles with a
+    deterministic fake sha256 (of the tile key + seed — no real tile bytes anywhere in the tests).
+    ``drop`` removes the last n tiles (an incomplete fetch)."""
+    import hashlib
+    from vtcseamless.observe import tile_range
+    w, s = ix * CELL - pad, iy * CELL - pad
+    e, n = w + CELL + 2 * pad, s + CELL + 2 * pad
+    tiles = []
+    for z in (15, 16):
+        x0, y0, x1, y1 = tile_range(z, w, s, e, n)
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                tiles.append({"z": z, "x": x, "y": y, "sha256": hashlib.sha256(f"{z}/{x}/{y}|{seed}".encode()).hexdigest()})
+    expected = len(tiles)
+    if drop:
+        tiles = tiles[:-drop]
+    return tiles, {"tiles_z15": sum(t["z"] == 15 for t in tiles), "tiles_z16": sum(t["z"] == 16 for t in tiles), "tile_errors": drop,
+                   "tiles_expected": expected, "tiles_fetched": len(tiles), "tiles_empty": 0}
+
+
+def cell_document(ix, iy, seed=1, pad=0.004, version=VERSION, big=True, tiles=True, drop_tiles=0):
     """What /viewport answers for the aligned cell (ix, iy): objects whose bbox intersects the cell,
     clipped to the padded assembly box (so copies crossing the pad are complete:false)."""
     w, s = ix * CELL, iy * CELL
@@ -91,10 +112,13 @@ def cell_document(ix, iy, seed=1, pad=0.004, version=VERSION, big=True):
             out.append(r)
         return out
 
-    return {"parcels": keep(P, pad), "footprints": keep(F, pad), "landuse": keep(L, pad), "ready": True, "truncated": False,
-            "count": 0, "source": "bev-direct", "bevdirect_version": version, "coord_decimals": 7,
-            "notice": "© BEV, 2026 – test", "license_url": "https://creativecommons.org/licenses/by/4.0/",
-            "fetched_at": "2026-10-06T00:00:00Z", "stats": {}, "query_time_ms": 1}
+    doc = {"parcels": keep(P, pad), "footprints": keep(F, pad), "landuse": keep(L, pad), "ready": True, "truncated": False,
+           "count": 0, "source": "bev-direct", "bevdirect_version": version, "coord_decimals": 7,
+           "notice": "© BEV, 2026 – test", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+           "fetched_at": "2026-10-06T00:00:00Z", "stats": {}, "query_time_ms": 1}
+    if tiles:  # bevdirect-serve ≥ v0.3.4
+        doc["tiles"], doc["stats"] = cell_tiles(ix, iy, seed, pad, drop_tiles)
+    return doc
 
 
 def village_cells():

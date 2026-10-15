@@ -17,6 +17,8 @@ class FakeServe(BaseHTTPRequestHandler):
     """Minimal bevdirect-serve: /health, /viewport (first call per cell pending), /kg/{kg}."""
     pending_once = True
     null_footprints = False
+    drop_tiles = {}            # (ix, iy) → n tiles missing (incomplete fetch, v0.3.4 stats)
+    no_tiles = False           # emulate bevdirect-serve < v0.3.4
     hits = {}
 
     def log_message(self, *a):
@@ -45,7 +47,7 @@ class FakeServe(BaseHTTPRequestHandler):
             FakeServe.hits[key] = FakeServe.hits.get(key, 0) + 1
             if FakeServe.pending_once and FakeServe.hits[key] == 1 and float(q.get("wait", "20")) < 5:
                 return self._json(200, {"parcels": [], "ready": False, "pending": True, "retry_after_s": 0})
-            doc = synth.cell_document(ix, iy)
+            doc = synth.cell_document(ix, iy, tiles=not FakeServe.no_tiles, drop_tiles=FakeServe.drop_tiles.get(key, 0))
             if FakeServe.null_footprints:
                 doc = dict(doc, footprints=None)  # bevdirect-serve < v0.3.3 on a cell without buildings
             return self._json(200, doc)

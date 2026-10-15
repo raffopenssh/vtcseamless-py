@@ -12,3 +12,4 @@ jobs:
         with: { python-version: "${{ matrix.python }}" }
       - run: pip install . pytest
       - run: python -m pytest -q tests
+      - run: "! grep -l 'chunks_tiles\|tile_provenance' ne_cells/*.py"   # tile hashing stays out of the frozen package

@@ -76,6 +76,12 @@ def cells_for(west: float, south: float, east: float, north: float) -> list[tupl
     return [(ix, iy) for ix in range(lo[0], hi[0] + 1) for iy in range(lo[1], hi[1] + 1)]
 
 
+def tiles_incomplete(doc: dict) -> bool:
+    """``stats.tiles_fetched < stats.tiles_expected`` (bevdirect-serve ≥ v0.3.4; False when absent)."""
+    st = doc.get("stats") or {}
+    return int(st.get("tiles_expected") or 0) > int(st.get("tiles_fetched") or 0)
+
+
 # ── client ──────────────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -194,7 +200,7 @@ class BevDirect:
         layers = tuple(layers)
         if not refresh and layers == ALL_LAYERS:
             doc = self._load(key)
-            if doc is not None:
+            if doc is not None and not tiles_incomplete(doc):
                 self.stats.cache_hits += 1
                 return doc
         t0 = time.time()
@@ -275,7 +281,9 @@ class BevDirect:
         return doc if doc.get("ready") else None
 
     def _store(self, key: str, doc: dict) -> None:
-        if not self.cache_dir or not doc.get("ready"):
+        # only ready documents, and never one assembled from an incomplete tile fetch
+        # (v0.3.4 stats): such a cell must be re-fetched on the next pass, not reused
+        if not self.cache_dir or not doc.get("ready") or tiles_incomplete(doc):
             return
         p = self._path(key)
         tmp = p + ".tmp"
