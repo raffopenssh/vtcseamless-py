@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Mirror of the operator's scripts/ne_cells_sync_check.sh: the frozen ne_cells files in this
 # package MUST be byte-identical to the operator's copy (the digest contract depends on it).
-# Compares against a local clone of the operator repo (CLONE=…, default ~/cadastre-process-api).
+# Compares against a local clone of the operator repo (CLONE=<path to the operator clone>, required).
 # Tile hashing / QC provenance lives in vtcseamless/observe.py, never in ne_cells/.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-THEIRS=${CLONE:-$HOME/cadastre-process-api}/ne_cells
+THEIRS=${CLONE:?set CLONE to the operator repo clone}/ne_cells
 FILES="algo.py canon.py ns_groups.py pack.py __init__.py"
 rc=0
 for f in $FILES; do
