@@ -54,6 +54,24 @@ class ServerError(RuntimeError):
     pass
 
 
+class UpstreamDownError(ServerError):
+    """bevdirect-serve reports BEV itself unreachable (``/health`` → ``upstream.state == "down"``,
+    bevdirect-serve ≥ v0.3.5: TLS failure, 5xx, …). Not "still assembling" — polling longer
+    will not help; the ``upstream`` document is attached as ``.upstream``."""
+
+    def __init__(self, msg: str, upstream: dict):
+        super().__init__(msg)
+        self.upstream = upstream
+
+
+def upstream_down(body: dict) -> Optional[dict]:
+    """The ``upstream`` object of a bevdirect-serve ≥ v0.3.5 response when it says ``down``."""
+    up = body.get("upstream")
+    if isinstance(up, dict) and up.get("state") == "down":
+        return up
+    return None
+
+
 # ── grid ────────────────────────────────────────────────────────────────────────────────
 
 def cell_of(lon: float, lat: float) -> tuple[int, int]:
@@ -146,6 +164,11 @@ class BevDirect:
         self._version = body.get("bevdirect_version") or self._version
         return body
 
+    def upstream(self) -> dict:
+        """``/health`` → ``upstream`` (≥ v0.3.5): ``{ok, state, tls_errors, http_5xx, last_error, …}``;
+        ``{"state": "unknown"}`` on older servers."""
+        return self.health().get("upstream") or {"state": "unknown", "ok": True}
+
     @property
     def version(self) -> str:
         """``bevdirect_version`` of the server (the NE source is ``bevdirect@<version>``)."""
@@ -172,6 +195,10 @@ class BevDirect:
             status, body, _ = self._get("/viewport", params, timeout=max(15.0, min(wait, left) + 30))
             if status == 400:
                 raise ValueError(body.get("error", "bad request"))
+            if up := upstream_down(body):  # ≥ v0.3.5: BEV unreachable (TLS, 5xx) — fail fast, not pending
+                self.stats.seconds += time.time() - t0
+                raise UpstreamDownError(f"BEV tile host down via {self.url}: {up.get('last_error')} "
+                                        f"(tls_errors={up.get('tls_errors')}, http_5xx={up.get('http_5xx')})", up)
             if status != 200:
                 # 502 = the server could not assemble (every tile failed, …) — transient; retry
                 self.log(f"viewport {status}: {body.get('error')}")

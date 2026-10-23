@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import synth  # noqa: E402
-from vtcseamless.bevdirect import BevDirect, PendingError, cell_bbox  # noqa: E402
+from vtcseamless.bevdirect import BevDirect, PendingError, UpstreamDownError, cell_bbox  # noqa: E402
 
 
 class FakeServe(BaseHTTPRequestHandler):
@@ -33,12 +33,16 @@ class FakeServe(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    upstream: dict = {"ok": True, "state": "ok"}
+
     def do_GET(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         if u.path == "/health":
-            return self._json(200, {"ok": True, "bevdirect_version": synth.VERSION, "admin_source": "test"})
+            return self._json(200, {"ok": True, "bevdirect_version": synth.VERSION, "admin_source": "test", "upstream": FakeServe.upstream})
         if u.path == "/viewport":
+            if FakeServe.upstream.get("state") == "down":
+                return self._json(502, {"error": "every tile download failed", "pending": True, "upstream": FakeServe.upstream})
             w, s = float(q["west"]), float(q["south"])
             if float(q["east"]) - w > 0.045 + 1e-9:
                 return self._json(400, {"error": "bbox too large"})
@@ -122,3 +126,17 @@ def test_null_layer_is_normalised(server, tmp_path):
         canon.from_bevdirect([doc])  # must not raise
     finally:
         FakeServe.null_footprints = False
+
+
+def test_upstream_down_fails_fast(server):
+    FakeServe.upstream = {"ok": False, "state": "down", "tls_errors": 7, "http_5xx": 0,
+                          "last_error": "tile host: tls: failed to verify certificate: x509: certificate signed by unknown authority"}
+    try:
+        c = BevDirect(server, deadline_s=30)
+        assert c.upstream()["state"] == "down"
+        t0 = time.time()
+        with pytest.raises(UpstreamDownError) as ei:
+            c.viewport(*cell_bbox(800, 2400))
+        assert time.time() - t0 < 5 and ei.value.upstream["tls_errors"] == 7
+    finally:
+        FakeServe.upstream = {"ok": True, "state": "ok"}

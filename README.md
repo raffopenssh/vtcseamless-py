@@ -22,8 +22,18 @@ a test fails if they appear anywhere else.
 
 ```
 pip install git+https://github.com/raffopenssh/vtcseamless-py      # python ≥ 3.11
-vtcseamless serve &                       # downloads bevdirect-serve v0.3.4 once, runs it on :8787
+vtcseamless serve &                       # downloads bevdirect-serve v0.3.5 once, runs it on :8787
 vtcseamless health
+```
+
+**BEV reachability vs. still assembling (0.3.1, bevdirect-serve ≥ v0.3.5).** `vtcseamless health`
+→ `bevdirect.upstream{ok, state: unknown|ok|degraded|down, tls_errors, http_5xx, other_errors,
+last_error, …}`. `BevDirect.viewport()` raises `UpstreamDownError` (with `.upstream`) as soon as
+the server says `down`, instead of polling `pending` to the deadline; `observe` therefore fails
+fast and reports nothing. Since 2026-10-23 BEV's tile host omits its TLS intermediate; v0.3.5
+ships it (and an AIA fallback), older binaries fail every tile with `x509: unknown authority`
+— re-run `vtcseamless serve` (pin bumped) or `-ca-bundle`/`BEVDIRECT_CA_BUNDLE`.
+```
 vtcseamless observe --kg <kg> --observer <my-label> --token $VTC_TOKEN     # → ./ne_out/<kg>.nec + report answer
 ```
 
