@@ -75,8 +75,12 @@ def upstream_down(body: dict) -> Optional[dict]:
 # ── grid ────────────────────────────────────────────────────────────────────────────────
 
 def cell_of(lon: float, lat: float) -> tuple[int, int]:
-    """Grid cell (ix, iy) containing lon/lat: ``ix = floor(lon / 0.02)``."""
-    return math.floor(lon / profile.CELL_SIZE), math.floor(lat / profile.CELL_SIZE)
+    """Grid cell (ix, iy) containing lon/lat: ``ix = floor(lon / 0.02 + 1e-9)``.
+
+    The epsilon mirrors bevdirect-serve ≥ v0.3.6 ``cellOf``: a coordinate that *is* a grid line
+    (``ix * 0.02`` or its 7-decimal rounding, e.g. ``15.54 / 0.02 = 776.999…``) must map to
+    ``ix``, not ``ix - 1`` — otherwise ~7 % of grid-aligned bboxes fold in a neighbour cell."""
+    return math.floor(lon / profile.CELL_SIZE + 1e-9), math.floor(lat / profile.CELL_SIZE + 1e-9)
 
 
 def cell_bbox(ix: int, iy: int) -> tuple[float, float, float, float]:

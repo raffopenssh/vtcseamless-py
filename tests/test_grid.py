@@ -20,5 +20,20 @@ def test_documented_domain_cells():
     assert len(cs) == 20
 
 
+def test_cell_of_grid_line_is_single_cell():
+    # bevdirect-serve < v0.3.6 bug: 15.54 / 0.02 = 776.999… → floor 776, so an aligned cell
+    # resolved to two cells; every grid line (and its 7-decimal rounding) must map to its own ix
+    import math
+    for ix in range(-9000, 9001):
+        for lon in (ix * 0.02, round(ix * 0.02, 7)):
+            assert cell_of(lon, lon)[0] == ix, (ix, lon)
+    assert cells_for(15.54, 48.40, 15.56, 48.42) == [(777, 2420)]
+    for ix in range(-9000, 9000):
+        w, s, e, n = cell_bbox(ix, ix)
+        assert cells_for(w, s, e, n) == [(ix, ix)]
+    # a point just inside the cell does not creep into the next one
+    assert cell_of(15.56 - 1e-9, 48.42 - 1e-9) == (777, 2420)
+
+
 def test_pad5():
     assert pad5("1503") == "01503" and pad5("63330") == "63330" and pad5("abc") == "abc"

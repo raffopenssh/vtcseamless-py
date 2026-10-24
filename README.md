@@ -22,7 +22,7 @@ a test fails if they appear anywhere else.
 
 ```
 pip install git+https://github.com/raffopenssh/vtcseamless-py      # python ≥ 3.11
-vtcseamless serve &                       # downloads bevdirect-serve v0.3.5 once, runs it on :8787
+vtcseamless serve &                       # downloads bevdirect-serve v0.3.6 once, runs it on :8787
 vtcseamless health
 ```
 
