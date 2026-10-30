@@ -60,11 +60,11 @@ def landuse_from_index(rows):
 
 
 def from_bevdirect(docs):
-    """One or more bevdirect-serve `/viewport` documents (0.02° cells; siedler's `/api/viewport` has the
+    """One or more bevdirect-serve `/viewport` documents (0.02° cells; a map client's `/api/viewport` has the
     same rows). Parcels: `parcel_id, kg_code, rstatus, ez, area_sqm, complete, geometry`; footprints:
     `id, ns, area_sqm, geometry`; landuse: `id, ns, area_sqm, geometry`. A parcel that crosses a cell's
     0.004° assembly pad appears in several cells, `complete:false` in all but one — algo.py keeps the
-    complete copy (then the largest), the same rule siedler's client applies ("complete copy wins")."""
+    complete copy (then the largest), the same rule the map client applies ("complete copy wins")."""
     if isinstance(docs, dict):
         docs = [docs]
     P, F, L = [], [], []
@@ -76,7 +76,7 @@ def from_bevdirect(docs):
 
 def bevdirect_source(docs) -> str:
     """`bevdirect@<version>` from the documents' `bevdirect_version` (bevdirect-serve ≥ v0.2.0 emits
-    it). All documents must agree; a document without it (v0.1.0, or siedler's own serialiser)
+    it). All documents must agree; a document without it (v0.1.0, or a client's own serialiser)
     cannot be pinned and raises — pass --source bevdirect@<tag> explicitly in that case."""
     if isinstance(docs, dict):
         docs = [docs]
